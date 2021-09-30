@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 **Compiled**: `r date()`
 
 ```{r, echo = FALSE}
-load("iso_data_sub.RData")
+load("data/RData/iso_data_sub.RData")
 selected_substs <- unique(iso_data_sub$isotopologue)
 ```
 
@@ -248,7 +248,8 @@ combine <- function(pts1, pts2) {
       linesc[i, 3:4] <- lines2[idx, ]  
   }
   res <- cbind(x_lo, x_up, linesc)
-  colnames(res) <- c("x_min", "x_max", "int_l", "slope_l", "int_u", "slope_u")
+  colnames(res) <- c("leftend", "rightend", "LBint", "LBslope", "UBint", 
+                     "UBslope")
   res
 }
 ```
@@ -276,6 +277,30 @@ points(bpl, col ="blue", pch = 16)
 points(bpu, col ="green", pch = 16)
 ```
 
+```{r}
+hmdb_subst <- lapply(selected_substs, function(sub){
+  idx <- which(iso_data_sub$isotopologue == sub)
+  points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+  xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1])
+  bpl <- bound_points(points, "lower")
+  bpu <- bound_points2(points, "upper", xsubd = xsubd)
+  res <- combine(bpl, bpu)
+  nr <- nrow(res)
+  data.frame(name = rep(sub, nr),
+             md = rep(iso_data_sub$md[idx][1], nr),
+             minmass = rep(min(points[, 1]), nr),
+             maxmass = rep(max(points[, 1]), nr),
+             res)
+})
+hmdb_subst <- do.call(rbind, hmdb_subst)
+```
+
+```{r}
+dr_txt <- paste0("data/txt/")
+dir.create(dr, showWarnings = FALSE, recursive = TRUE)
+write.table(hmdb_subst, file = paste0(dr_txt, "hmdb_subst_all-neg.txt"),
+            sep = "\t", row.names = TRUE)
+```
 
 # Session information
 
