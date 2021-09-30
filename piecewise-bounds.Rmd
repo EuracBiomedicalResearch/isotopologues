@@ -65,7 +65,8 @@ Below, we plot the bounds we obtain for each substitution using the strategy
 described above.
 
 ```{r, echo = FALSE, fig.width = 10, fig.height = 8}
-f <- rep(seq(ceiling(length(selected_substs)/9)), each = 9)[seq_along(selected_substs)]
+f <- rep(seq(ceiling(length(selected_substs)/9)), 
+         each = 9)[seq_along(selected_substs)]
 plts <- split(sort(selected_substs), f)
 
 tmp <- lapply(plts, function(z) {
@@ -91,7 +92,7 @@ next point is searched among those who have mass lower than a certain mass
 threshold rather than on all the points to the right of P.
 In particular we define a subdivision `xsubd` of the mass range where points are
 present. We start by searching the point P1 among those with mass s.t. 
-0 < mass < `xsubd[2]`,P2 among those with mass s.t. 
+0 < mass < `xsubd[2]`, P2 among those with mass s.t. 
 P1 x value < mass < `xsubd[2]` etc.
 In addition we want negative slope segments to be avoided should the algorithm 
 find some. With the original algorithm negative slopes can only occur for the
@@ -178,12 +179,13 @@ tmp <- lapply(plts, function(z) {
     plot(points, main = iso, xlab = "monoisotopic mass",
          ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
     xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
-      min(points[, 1]) 
-    points(bound_points(points, "lower"), type= "l", col = "red")#377EB880")
-    points(bound_points2(points, "lower", xsubd = xsubd), 
-           type ="l", col = "#377EB880")
-    points(bound_points2(points, "upper", xsubd = xsubd), 
-           type ="l", col = "#4DAF4A80")
+      min(points[, 1])
+    bpl <- bound_points(points, "lower")
+    points(bpl, type= "l", col = "#377EB880")
+    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
+    bpu <- bound_points2(points, "upper", xsubd = xsubd)
+    points(bpu, type ="l", col = "#4DAF4A80")
+    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
     # xsubd <- seq(0,1, length.out=8)^1.5 * diff(range(points[, 1])) + 
     #   min(points[, 1])
     # xsubd <- quantile(points[, 1], seq(0,1, length.out=8))
@@ -205,25 +207,49 @@ tmp <- lapply(plts, function(z) {
     idx <- which(iso_data_sub$isotopologue == iso)
     points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
     #s <- which(points[, 1] <= 800)
-    s <- which(points[, 1] <= min(points[, 1]) + 0.1 * diff(range(points[, 1])))
-    if((nr <- nrow(points)) < 500)
-      s <- seq_len(nr)
+    s <- which(points[, 1] <= min(points[, 1]) + 700)# 0.1 * diff(range(points[, 1])))
     plot(points[s, ], main = iso, xlab = "monoisotopic mass",
          ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
     xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
       min(points[, 1]) 
-    points(bound_points(points, "lower"), type= "l", col = "#377EB880")
-    points(bound_points2(points, "upper", xsubd = xsubd), 
-           type ="l", col = "#4DAF4A80")
+    bpl <- bound_points(points, "lower")
+    points(bpl, type= "l", col = "#377EB880")
+    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
+    bpu <- bound_points2(points, "upper", xsubd = xsubd)
+    points(bpu, type ="l", col = "#4DAF4A80")
+    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
   }
 })
 ```
+The relatively high slope for the second segment of of the upper bound line of 
+[13]C3 is caused by an unlucky coincidence as the plot below shows. I wander if 
+I should also try to use another convenient more to the right point instead of 
+the origin as a starting point.  
+```{r}
+iso = "[13]C3"
+idx <- which(iso_data_sub$isotopologue == iso)
+points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+s <- which(points[, 1] <= min(points[, 1]) + 200)
+plot(points[s, ], main = iso, xlab = "monoisotopic mass",
+     ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
+  min(points[, 1]) 
+bpl <- bound_points(points, "lower")
+points(bpl, type= "l", col = "#377EB880")
+abline(v = bpl[, 1], col = "grey", lwd = 0.5)
+bpu <- bound_points2(points, "upper", xsubd = xsubd)
+points(bpu, type ="l", col = "#4DAF4A80")
+abline(v = bpu[, 1], col = "grey", lwd = 0.5)
+abline(v = xsubd, col = "red")
+```
+
 
 Here I define a helper function to get the slopes and intercepts of the 
 segments connecting the bound points. Furthermore, the intervals induced from
 the x coordinates of the upper bound points are are not the same as those 
 induced by the lower bound points. We define the final bounds on the intervals 
 induced by the union of x coordinates of both upper and lower bound points.
+
 ```{r}
 get_lines <- function(pts) {
   slope <- diff(pts[, 2])/diff(pts[, 1])
@@ -260,26 +286,27 @@ get_bounds <- function(pts1, pts2) {
 
 
 ```{r, echo = FALSE, eval = FALSE}
-# add bound lines to a plot of (mass, R) points
-addlines <- function(lns, ...) {
-  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), type = "l", ...)
-  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), pch = 16, ...)
-}
-#Check the results for a given substitution
-idx <- which(iso_data_sub$isotopologue == "[13]C1[37]Cl2")
-points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
-xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1]) 
-bpl <- bound_points(points, "lower")
-bpu <- bound_points2(points, "upper", xsubd = xsubd)
-# pts1 <- get_lines(bpl)
-# pts2 <- get_lines(bpu)
-plot(points)
-res <- get_bounds(bpl, bpu)
-addlines(res[, c(2, 3, 4)], col = "blue")
-addlines(res[, c(2, 5, 6)], col = "green")
-points(bpl, col ="blue", pch = 16)
-points(bpu, col ="green", pch = 16)
+# # add bound lines to a plot of (mass, R) points
+# addlines <- function(lns, ...) {
+#   points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), type = "l", ...)
+#   points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), pch = 16, ...)
+# }
+# #Check the results for a given substitution
+# idx <- which(iso_data_sub$isotopologue == "[13]C1[37]Cl2")
+# points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+# xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1]) 
+# bpl <- bound_points(points, "lower")
+# bpu <- bound_points2(points, "upper", xsubd = xsubd)
+# # pts1 <- get_lines(bpl)
+# # pts2 <- get_lines(bpu)
+# plot(points)
+# res <- get_bounds(bpl, bpu)
+# addlines(res[, c(2, 3, 4)], col = "blue")
+# addlines(res[, c(2, 5, 6)], col = "green")
+# points(bpl, col ="blue", pch = 16)
+# points(bpu, col ="green", pch = 16)
 ```
+
 Finally we construct the substitution definition table.
 ```{r}
 hmdb_subst <- lapply(selected_substs, function(sub){
