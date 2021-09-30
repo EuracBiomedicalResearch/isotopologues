@@ -1,0 +1,10 @@
+*.html
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+oldcode/*
+data/RData/oldRData/*
+data/txt/oldtxt/*
+isotopologues.Rproj

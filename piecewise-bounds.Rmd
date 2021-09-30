@@ -1,0 +1,286 @@
+---
+title: "Finding better bounds for R on a subdivision of the x (mass) axis"
+output:
+  rmarkdown::html_document:
+    highlight: pygments
+    toc: true
+    toc_depth: 3
+    fig_width: 5
+---
+
+```{r style, echo = FALSE, results = 'asis', message = FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+**Last modified:** `r file.info("isotope-intensity-estimation.Rmd")$mtime`<br />
+**Compiled**: `r date()`
+
+```{r, echo = FALSE}
+load("iso_data_sub.RData")
+selected_substs <- unique(iso_data_sub$isotopologue)
+```
+
+In this document, given a set of selected substitutions, we want to determine, 
+for each of them, mass dependent upper and lower bounds for 
+R (ratio between the probability to observe the substitution in a compound and 
+the probability to observe the monoisotopic substitution). 
+In particular, we construct broken bound lines iteratively using the following 
+strategy based on the available data points (m, R) (each of them being 
+associated to a certain HMDB compound) for a given substitution.
+To determine an upper [lower] bound line we start from the origin of the 
+(mass, R) space and we select among the available points the point P1 such 
+that the slope of the line trough the origin and P1 is maximum [minimum]. Then 
+among the points to the right of P1 (if any) we look for P2 such that the slope 
+through P1 and P2 is maximum [minimum]. We proceed analogously until there's no 
+point to the right of PN, i.e. PN is the point with maximum mass value. The 
+broken line obtained by connecting each of the found points with the next one is
+by construction an upper [lower] bound line.
+The following function is designed to find such points.
+
+```{r}
+bound_points <- function (points, option = "lower", p0 = c(0, 0)){
+  bound_pts <- p0
+  if(option == "lower") {
+      FUN <- which.min
+    } else if(option == "upper") {
+      FUN <- which.max
+    } else {
+      stop("error")
+    }
+  while(nrow(points)){
+    slopes = (points[, 2] - p0[2])/(points[, 1] - p0[1])
+    p1 <- points[FUN(slopes), ]
+    bound_pts <- rbind(bound_pts, p1)
+    points <- points[which(points[, 1] > p1[1]), , drop = FALSE]
+    p0 <- p1
+  }
+  rownames(bound_pts) <- NULL
+  bound_pts
+}
+```
+
+Below, we plot the bounds we obtain for each substitution using the strategy 
+described above.
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)), each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+    par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+    for (iso in z) {
+        idx <- which(iso_data_sub$isotopologue == iso)
+        points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+        plot(points, main = iso, xlab = "monoisotopic mass",
+             ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+        points(bound_points(points, "lower"), type= "l", col = "#377EB880")
+        points(bound_points(points, "upper"), type ="l", col = "#4DAF4A80")
+    }
+})
+```
+
+The approach seem to work relatively well for the lower bound broken line 
+because the relation R vs mass tends to always be linear or superlinear. 
+Also because of that the upper bound broken line is often the line through the 
+origin and one of the rightmost points and doesn't follow the nonlinear 
+trend well enough.  
+To solve this problem the idea is to modify the algorithm in such a way that the
+next point is searched among those who have mass lower than a certain mass 
+threshold rather than on all the points to the right of P.
+In particular we define a subdivision `xsubd` of the mass range where points are
+present. We start by searching the point P1 among those with mass s.t. 
+0 < mass < `xsubd[2]`,P2 among those with mass s.t. 
+P1 x value < mass < `xsubd[2]` etc.
+In addition we want negative slope segments to be avoided should the algorithm 
+find some. With the original algorithm negative slopes can only occur for the
+the last segments of the upper bound broken line. That's because for the upper 
+[lower] bound line the slope of each segment is bigger [smaller] by construction 
+than that of the next one and the slope of the first segment is always 
+positive (being one endpoint the origin and the other having positive 
+coordinates). The modification of the original algorithm introduces the 
+possibility that each segment (but the first one) can have negative slope for 
+both the upper bound and lower bound line. We remove points which which cause
+negative slopes segments in such a way that the remaining points still define 
+a bound broken line. In case the last segments have negative slopes we replace 
+the points originating them with a point at the intersection of the line 
+extending the last valid (positive slope) segment and the vertical line through
+the point with maximum x value.
+
+```{r}
+bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
+  bound_pts <- p0
+  k <- 2
+  max_x <- max(points[, 1])
+  if(option == "lower") {
+    FUN <- which.min
+  } else if(option == "upper") {
+    FUN <- which.max
+  } else {
+    stop("error")
+  }
+  while(nrow(points)){
+    while(k <= length(xsubd) && !length(idxs <- which(points[, 1] <= xsubd[k]))){
+      k <- k + 1
+    }
+    points_tmp <- as.matrix(points[idxs, , drop = FALSE])
+    slopes = (points_tmp[, 2] - p0[2])/(points_tmp[, 1] - p0[1])
+    p1 <- points_tmp[FUN(slopes), ]
+    bound_pts <- rbind(bound_pts, p1)
+    points <- points[which(points[, 1] > p1[1]), , drop = FALSE]
+    p0 <- p1
+    if(p1[1] > xsubd[k - 1] && k != length(xsubd))
+      k <- k + 1
+  }
+  rownames(bound_pts) <- NULL
+  # remove negative slopes
+  np <- nrow(bound_pts)
+  keep <- rep(TRUE, np)
+  if(option == "upper")
+    seqi <- 1:(np - 1)
+  else
+    seqi <- np:2
+  s <- seqi[2] - seqi[1]
+  for (i in seqi){
+    if(keep[i]){
+      keep[which(s * bound_pts[, 1] > s * bound_pts[i, 1] & 
+                   s * bound_pts[, 2] < s * bound_pts[i, 2])] <- FALSE
+    }
+  }
+  bound_pts <- bound_pts[keep, ]
+  # change last point if its x value is not equal to maximum x value of input 
+  # points
+  np <- nrow(bound_pts)
+  if(bound_pts[np, 1] < max_x)
+    bound_pts[np, ] <- c(max_x, diff(bound_pts[c(np - 1, np), 2]) /
+                           diff(bound_pts[c(np - 1, np), 1]) *
+                           (max_x - bound_pts[np, 1]) + bound_pts[np, 2])
+  bound_pts
+}
+```
+
+
+In the following plot are reported the bounds for R vs mass obtained using the 
+modified function for the upper bound. A x axis subdivision with shorter 
+intervals the closer to the minimum of the mass range has been used.
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)), 
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    plot(points, main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
+      min(points[, 1]) 
+    points(bound_points(points, "lower"), type= "l", col = "red")#377EB880")
+    points(bound_points2(points, "lower", xsubd = xsubd), 
+           type ="l", col = "#377EB880")
+    points(bound_points2(points, "upper", xsubd = xsubd), 
+           type ="l", col = "#4DAF4A80")
+    # xsubd <- seq(0,1, length.out=8)^1.5 * diff(range(points[, 1])) + 
+    #   min(points[, 1])
+    # xsubd <- quantile(points[, 1], seq(0,1, length.out=8))
+    # points(bound_points2(points, "upper", xsubd = xsubd), 
+    #        type ="l", col = "red")#4DAF4A80")
+    # abline(v = xsubd)
+  }
+})
+```
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)), 
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    #s <- which(points[, 1] <= 800)
+    s <- which(points[, 1] <= min(points[, 1]) + 0.1 * diff(range(points[, 1])))
+    if((nr <- nrow(points)) < 500)
+      s <- seq_len(nr)
+    plot(points[s, ], main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
+      min(points[, 1]) 
+    points(bound_points(points, "lower"), type= "l", col = "#377EB880")
+    points(bound_points2(points, "upper", xsubd = xsubd), 
+           type ="l", col = "#4DAF4A80")
+  }
+})
+```
+
+Here I define some helper functions to get the slopes and intercepts from the
+bound points.
+```{r}
+get_lines <- function(pts) {
+  slope <- diff(pts[, 2])/diff(pts[, 1])
+  intercept <- pts[-1, 2] - slope * pts[-1, 1]
+  cbind(intercept, slope)
+}
+
+combine <- function(pts1, pts2) {
+  n1 <- nrow(pts1)
+  n2 <- nrow(pts2)
+  if(n1 < 2 || n2 < 2)
+    stop("pts1 and pts2 must conatain at least two points each")
+  x <- unique(sort(c(pts1[ ,1], pts2[ ,1])))
+  n <- length(x)
+  x_lo <- head(x, n -1)
+  x_up <- tail(x, n -1)
+  lines1 <- get_lines(pts1)
+  lines2 <- get_lines(pts2)
+  linesc <- matrix(NA, nrow = n - 1, ncol = 4)
+  for(i in seq_len(n-1)) {
+    idx <- which(pts1[1:(n1-1), 1] <= x[i] & pts1[2:n1, 1] > x[i])
+    if(length(idx))
+      linesc[i, 1:2] <- lines1[idx, ]
+    idx <- which(pts2[1:(n2-1), 1] <= x[i] & pts2[2:n2, 1] > x[i])
+    if(length(idx))
+      linesc[i, 3:4] <- lines2[idx, ]  
+  }
+  res <- cbind(x_lo, x_up, linesc)
+  colnames(res) <- c("x_min", "x_max", "int_l", "slope_l", "int_u", "slope_u")
+  res
+}
+```
+
+
+```{r, echo = FALSE, eval = FALSE}
+# add bound lines to a plot of (mass, R) points
+addlines <- function(lns, ...) {
+  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), type = "l")
+  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), pch = 16)
+}
+idx <- which(iso_data_sub$isotopologue == "[13]C1[37]Cl2")
+points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1]) 
+bpl <- bound_points(points, "lower")
+bpu <- bound_points2(points, "upper", xsubd = xsubd)
+# pts1 <- get_lines(bpl)
+# pts2 <- get_lines(bpu)
+
+plot(points)
+res <- combine(bpl, bpu)
+addlines(res[, c(2, 3, 4)])
+addlines(res[, c(2, 5, 6)])
+points(bpl, col ="blue", pch = 16)
+points(bpu, col ="green", pch = 16)
+```
+
+
+# Session information
+
+The R version and packages used in this analysis are listed below.
+
+```{r sessioninfo}
+sessionInfo()
+```
