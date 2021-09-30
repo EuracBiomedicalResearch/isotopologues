@@ -17,7 +17,8 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 **Compiled**: `r date()`
 
 ```{r, echo = FALSE}
-load("data/RData/iso_data_sub.RData")
+iso_data_sub_fl <- "iso_data_sub.RData" # "iso_data_sub_neg.RData"
+load(paste0("data/RData/", iso_data_sub_fl))
 selected_substs <- unique(iso_data_sub$isotopologue)
 ```
 
@@ -218,8 +219,11 @@ tmp <- lapply(plts, function(z) {
 })
 ```
 
-Here I define some helper functions to get the slopes and intercepts from the
-bound points.
+Here I define a helper function to get the slopes and intercepts of the 
+segments connecting the bound points. Furthermore, the intervals induced from
+the x coordinates of the upper bound points are are not the same as those 
+induced by the lower bound points. We define the final bounds on the intervals 
+induced by the union of x coordinates of both upper and lower bound points.
 ```{r}
 get_lines <- function(pts) {
   slope <- diff(pts[, 2])/diff(pts[, 1])
@@ -227,7 +231,7 @@ get_lines <- function(pts) {
   cbind(intercept, slope)
 }
 
-combine <- function(pts1, pts2) {
+get_bounds <- function(pts1, pts2) {
   n1 <- nrow(pts1)
   n2 <- nrow(pts2)
   if(n1 < 2 || n2 < 2)
@@ -258,9 +262,10 @@ combine <- function(pts1, pts2) {
 ```{r, echo = FALSE, eval = FALSE}
 # add bound lines to a plot of (mass, R) points
 addlines <- function(lns, ...) {
-  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), type = "l")
-  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), pch = 16)
+  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), type = "l", ...)
+  points(cbind(lns[, 1], lns[, 1]*lns[, 3] + lns[, 2]), pch = 16, ...)
 }
+#Check the results for a given substitution
 idx <- which(iso_data_sub$isotopologue == "[13]C1[37]Cl2")
 points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
 xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1]) 
@@ -268,15 +273,14 @@ bpl <- bound_points(points, "lower")
 bpu <- bound_points2(points, "upper", xsubd = xsubd)
 # pts1 <- get_lines(bpl)
 # pts2 <- get_lines(bpu)
-
 plot(points)
-res <- combine(bpl, bpu)
-addlines(res[, c(2, 3, 4)])
-addlines(res[, c(2, 5, 6)])
+res <- get_bounds(bpl, bpu)
+addlines(res[, c(2, 3, 4)], col = "blue")
+addlines(res[, c(2, 5, 6)], col = "green")
 points(bpl, col ="blue", pch = 16)
 points(bpu, col ="green", pch = 16)
 ```
-
+Finally we construct the substitution definition table.
 ```{r}
 hmdb_subst <- lapply(selected_substs, function(sub){
   idx <- which(iso_data_sub$isotopologue == sub)
@@ -284,7 +288,7 @@ hmdb_subst <- lapply(selected_substs, function(sub){
   xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1])
   bpl <- bound_points(points, "lower")
   bpu <- bound_points2(points, "upper", xsubd = xsubd)
-  res <- combine(bpl, bpu)
+  res <- get_bounds(bpl, bpu)
   nr <- nrow(res)
   data.frame(name = rep(sub, nr),
              md = rep(iso_data_sub$md[idx][1], nr),
@@ -297,8 +301,9 @@ hmdb_subst <- do.call(rbind, hmdb_subst)
 
 ```{r}
 dr_txt <- paste0("data/txt/")
-dir.create(dr, showWarnings = FALSE, recursive = TRUE)
-write.table(hmdb_subst, file = paste0(dr_txt, "hmdb_subst_all-neg.txt"),
+dir.create(dr_txt, showWarnings = FALSE, recursive = TRUE)
+write.table(hmdb_subst, 
+            file = paste0(dr_txt, "hmdb_subst.txt"),
             sep = "\t", row.names = TRUE)
 ```
 
