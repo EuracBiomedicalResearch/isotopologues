@@ -60,9 +60,8 @@ bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
     stop("error")
   }
   while(nrow(points)){
-    while(k <= length(xsubd) && !length(idxs <- which(points[, 1] <= xsubd[k]))){
+    while(!length(idxs <- which(points[, 1] <= xsubd[k])) && k < length(xsubd))
       k <- k + 1
-    }
     points_tmp <- as.matrix(points[idxs, , drop = FALSE])
     slopes = (points_tmp[, 2] - p0[2])/(points_tmp[, 1] - p0[1])
     p1 <- points_tmp[FUN(slopes), ]

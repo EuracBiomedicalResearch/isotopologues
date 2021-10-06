@@ -14,7 +14,7 @@ library(BiocStyle)
 knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 ```
 
-**Last modified:** `r file.info("isotope-intensity-estimation.Rmd")$mtime`<br />
+**Last modified:** `r file.info("hmdb_subst_neutral.Rmd")$mtime`<br />
 **Compiled**: `r date()`
 
 $\require{mhchem}$
@@ -339,7 +339,7 @@ consists of the heavier isotopes characterizing the associated isotopologue,
 e.g. `"[13]C4[15]N2"` and determine the frequency of each substitution in HMDB.
 
 ```{r, echo = FALSE}
-dr <- paste0("data/RData/isotope-intensity-estimation/")
+dr <- paste0("data/RData/")
 dir.create(dr, showWarnings = FALSE, recursive = TRUE)
 ```
 
@@ -349,7 +349,7 @@ isos <- isotopes$isotope[-match(unique(isotopes$element), isotopes$element)]
 ```
 
 
-```{r, eval = !file.exists(paste0(dr, "subst_frequencies.RData"))}
+```{r, eval = !file.exists(paste0(dr, "subst_frequencies_neutral.RData"))}
 ## Ensure that element order is correct
 chemforms <- sapply(cmps$formula, standardizeFormula) # function to find formula from adduct
 threshold <- 0.01 * 10^(-2)
@@ -377,12 +377,12 @@ iso_ps <- lapply(iso_ps, function(iso_p) {
 subst_per_cmpd <- lapply(iso_ps, function(z) rownames(z)[rownames(z) != "mono"])
 subst_frequency <- table(unlist(subst_per_cmpd, use.names = FALSE))
 save(subst_frequency, subst_per_cmpd, 
-     iso_ps, chemforms, file = paste0(dr, "subst_frequencies.RData"))
+     iso_ps, chemforms, file = paste0(dr, "subst_frequencies_neutral.RData"))
 ```
 
 
-```{r, echo = FALSE, eval = file.exists(paste0(dr, "subst_frequencies.RData"))}
-load(paste0(dr, "subst_frequencies.RData"))
+```{r, echo = FALSE, eval = file.exists(paste0(dr, "subst_frequencies_neutral.RData"))}
+load(paste0(dr, "subst_frequencies_neutral.RData"))
 ```
 
 We thus defined `r length(subst_frequency)` substitutions that in at least a 
@@ -481,7 +481,7 @@ We next compute for all of the isotopologues (associated with the selected
 substitutions) their mass difference $md$ and subsequently also the observed 
 intensity (probability) ratios between monoisotopic peak and isotopologue peak.
 
-```{r}
+```{r, eval = !file.exists(paste0(dr, "iso_data_sub_neutral.RData"))}
 ## Calculate mass differences and intensity (probability) ratios for all
 ## isotopologues; putting all into a data.frame for easier data processing
 iso_data <- lapply(iso_ps, function(z) {
@@ -511,6 +511,11 @@ iso_data$hmdb_id <- rep(cmps$compound_id, cnts)
 
 ## subset to selected isotopologues
 iso_data_sub <- iso_data[iso_data$isotopologue %in% selected_substs, ]
+save(iso_data_sub, file = paste0(dr, "iso_data_sub_neutral.RData"))
+```
+
+```{r, eval = file.exists(paste0(dr, "iso_data_sub_neutral.RData"))}
+load(paste0(dr, "iso_data_sub_neutral.RData"))
 ```
 
 ### Finding bounds for intensity ratios on a subdivision of the x (mass) axis
@@ -556,67 +561,26 @@ the points originating them with a point at the intersection of the line
 extending the last valid (positive slope) segment and the vertical line through
 the point with maximum x value.
 
-In the following plot are reported the bounds for R vs mass obtained using the 
-modified function for the upper bound. A x axis subdivision with shorter 
-intervals the closer to the minimum of the mass range has been used.
+Using the approach described above we compute upper and lower bound broken lines
+and we collect slope and intercepts of each segment in a substitution definition
+matrix (along with the mass difference associated to the substitution). For
+the upper bound computation the modified approach has been used with a x axis 
+subdivision presenting shorter intervals the closer to the minimum of the mass 
+range. For each substitution multiple rows are present and each one of them is 
+associated to a different mass interval whose endpoints are the endpoints 
+x-values of a segment in the broken lines.
 
-```{r, echo = FALSE, fig.width = 10, fig.height = 8}
-f <- rep(seq(ceiling(length(selected_substs)/9)), 
-         each = 9)[seq_along(selected_substs)]
-plts <- split(sort(selected_substs), f)
+<!-- I reorganized the code computing directly the final matrix and plotting 
+the bounds from it in order to have less calls to `bound_points` functions 
+(but they are quite fast so I could also go back to the way it was before -->
 
-tmp <- lapply(plts, function(z) {
-  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
-  for (iso in z) {
-    idx <- which(iso_data_sub$isotopologue == iso)
-    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
-    plot(points, main = iso, xlab = "monoisotopic mass",
-         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
-    xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
-      min(points[, 1])
-    bpl <- bound_points(points, "lower")
-    points(bpl, type= "l", col = "#377EB880")
-    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
-    bpu <- bound_points2(points, "upper", xsubd = xsubd)
-    points(bpu, type ="l", col = "#4DAF4A80")
-    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
-  }
-})
-```
 
-We repeat the same plots on a portion of the mass range.
-```{r, echo = FALSE, fig.width = 10, fig.height = 8}
-f <- rep(seq(ceiling(length(selected_substs)/9)), 
-         each = 9)[seq_along(selected_substs)]
-plts <- split(sort(selected_substs), f)
-
-tmp <- lapply(plts, function(z) {
-  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
-  for (iso in z) {
-    idx <- which(iso_data_sub$isotopologue == iso)
-    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
-    #s <- which(points[, 1] <= 800)
-    s <- which(points[, 1] <= min(points[, 1]) + 700)# 0.1 * diff(range(points[, 1])))
-    plot(points[s, ], main = iso, xlab = "monoisotopic mass",
-         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
-    xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) + 
-      min(points[, 1]) 
-    bpl <- bound_points(points, "lower")
-    points(bpl, type= "l", col = "#377EB880")
-    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
-    bpu <- bound_points2(points, "upper", xsubd = xsubd)
-    points(bpu, type ="l", col = "#4DAF4A80")
-    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
-  }
-})
-```
-
-We construct the substitution definition table.
 ```{r}
 hmdb_subst <- lapply(selected_substs, function(sub){
   idx <- which(iso_data_sub$isotopologue == sub)
   points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
-  xsubd <- seq(0,1, length.out=8)^2 * diff(range(points[, 1])) + min(points[, 1])
+  xsubd <- seq(0,1, length.out = 8)^2 * diff(range(points[, 1])) +
+    min(points[, 1])
   bpl <- bound_points(points, "lower")
   bpu <- bound_points2(points, "upper", xsubd = xsubd)
   res <- get_bounds(bpl, bpu)
@@ -630,6 +594,62 @@ hmdb_subst <- lapply(selected_substs, function(sub){
 hmdb_subst <- do.call(rbind, hmdb_subst)
 ```
 
+In the following plot are reported the obtained bounds for R vs mass.
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)),
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    plot(points, main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    idx_sub <- which(hmdb_subst[, "name"] == iso)
+    x <- hmdb_subst[idx_sub, "rightend"]
+    LBint <-  hmdb_subst[idx_sub, "LBint"]
+    LBslope <-  hmdb_subst[idx_sub, "LBslope"]
+    points(cbind(c(0, x), c(0, LBslope * x + LBint)), type = "l", col = "#377EB880")
+    UBint <-  hmdb_subst[idx_sub, "UBint"]
+    UBslope <-  hmdb_subst[idx_sub, "UBslope"]
+    points(cbind(c(0, x), c(0, UBslope * x + UBint)), type = "l", col = "#4DAF4A80")
+    abline(v = c(0, x), col = "grey", lwd = 0.5)
+  }
+})
+```
+
+We repeat the same plots on a portion of the mass range.
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)),
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    #s <- which(points[, 1] <= 800)
+    s <- which(points[, 1] <= min(points[, 1]) + 700)
+    plot(points[s, ], main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    idx_sub <- which(hmdb_subst[, "name"] == iso)
+    x <- hmdb_subst[idx_sub, "rightend"]
+    LBint <-  hmdb_subst[idx_sub, "LBint"]
+    LBslope <-  hmdb_subst[idx_sub, "LBslope"]
+    points(cbind(c(0, x), c(0, LBslope * x + LBint)), type = "l", col = "#377EB880")
+    UBint <-  hmdb_subst[idx_sub, "UBint"]
+    UBslope <-  hmdb_subst[idx_sub, "UBslope"]
+    points(cbind(c(0, x), c(0, UBslope * x + UBint)), type = "l", col = "#4DAF4A80")
+    abline(v = c(0, x), col = "grey", lwd = 0.5)
+  }
+})
+```
+
 ```{r}
 dr_txt <- paste0("data/txt/")
 dir.create(dr_txt, showWarnings = FALSE, recursive = TRUE)
@@ -639,6 +659,7 @@ write.table(hmdb_subst,
 ```
 
 The following table contains summary information about the substitutions.
+
 ```{r}
 f <- factor(iso_data_sub$isotopologue)
 subst_info <- data.frame(
@@ -647,7 +668,7 @@ subst_info <- data.frame(
   maxmass = vapply(split(iso_data_sub$monomass, f), max, numeric(1)),
   md = iso_data_sub$md[match(levels(f), iso_data_sub$isotopologue)],
   proportion = as.numeric(
-    (subst_frequency/nrow(cmps))[match(levels(f), names(subst_frequency))]),
+    (subst_frequency / nrow(cmps))[match(levels(f), names(subst_frequency))]),
   proportion_var = as.numeric(
     subst_proportion_var[match(levels(f), names(subst_proportion_var))])
 )
