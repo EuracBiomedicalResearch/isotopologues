@@ -1,0 +1,436 @@
+---
+title: "Defining parameters to identify isotopologue peaks using [M-H], [M+HCO2], [M+Cl] from HMDB"
+author: "Andrea Vicini, Vinicius Verri Hernandez, Johannes Rainer"
+output:
+  rmarkdown::html_document:
+    highlight: pygments
+    toc: true
+    toc_depth: 3
+    fig_width: 5
+---
+
+```{r style, echo = FALSE, results = 'asis', message = FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+**Last modified:** `r file.info("hmdb_subst_negative.Rmd")$mtime`<br />
+**Compiled**: `r date()`
+
+$\require{mhchem}$
+
+# Introduction
+
+In this document we evaluate the substitutions parameters that can be obtained 
+from the the adducts [M-H], [M+HCO2], [M+Cl] of the human metabolom database 
+(HMDB) compounds.
+
+```{r libraries, warning = FALSE}
+library("CompoundDb")
+library("MetaboCoreUtils")
+library("pander")
+library("enviPat")
+source("functions.R")
+```
+
+We load the HMDB database and extract the chemical formula and exact mass of all
+compounds.
+
+```{r}
+cdb <- CompDb("data/CompDb.Hsapiens.HMDB.4.0.sqlite")
+cmps <- compounds(cdb, columns = c("compound_id", "name",
+                                   "formula", "exactmass"))
+```
+
+For each compound in the HMDB with available mass we compute the counts of 
+the atoms that are present in it and collect them in a data frame with a 
+column for each element and a row for each compound in HMDB.
+
+```{r}
+cmps <- cmps[-which(is.na(cmps$exactmass)), ]
+```
+
+```{r}
+tmp <- lapply(cmps$formula, function(frml) res <- countElements(frml))
+elements_names <- unique(names(unlist(tmp)))
+counts <- lapply(tmp, function(x) {
+  row <- numeric(length(elements_names))
+  names(row) <- elements_names
+  row[names(x)] <- x
+  row
+  })
+counts_df <- data.frame(do.call(rbind, counts))
+rownames(counts_df) <- cmps$compound_id
+```
+
+```{r}
+CHNOPSCl <- c("C", "H", "N", "O", "P", "S", "Cl")
+onlyCHNOPSCl <- rowSums(counts_df[, setdiff(elements_names, CHNOPSCl)]) == 0
+
+# With the following lines we can exclude compounds that have some atoms of
+# elements different from CHNOPSCl.
+cmps <- cmps[onlyCHNOPSCl, ]
+counts_df <- counts_df[onlyCHNOPSCl, ]
+```
+
+We derive the counts of the adducts [M+Cl] and from them the their formulas.
+
+```{r}
+counts_df_H <- counts_df_HCO2 <- counts_df_Cl <- counts_df
+
+counts_df_H <- counts_df_H[- which(cmps$formula == "H"), ]
+counts_df_H <- counts_df_H[counts_df_H$H > 0, ]
+counts_df_H$H <- counts_df_H$H - 1
+
+counts_df_HCO2$H <- counts_df_HCO2$H + 1
+counts_df_HCO2$C <- counts_df_HCO2$C + 1
+counts_df_HCO2$O <- counts_df_HCO2$O + 2
+
+counts_df_Cl$Cl <- counts_df_Cl$Cl + 1
+counts_df <- rbind(counts_df_H, counts_df_HCO2, counts_df_Cl)
+adducts_frmls <- apply(counts_df, 1, function(elements) pasteElements(elements))
+```
+
+### Identification of the most frequent isotopic substitutions {#isotopologues}
+
+We next aim at identifying, for all compounds present in HMDB, the most 
+frequently observed isotopic substitutions considering all possible 
+isotopologues for each molecule.
+
+To this end we calculate the isotope pattern for each compound in HMDB using
+`enviPat` and identify isotopologues which would result in an intensity
+higher than 10^(-4). For each of these peaks we define its *substitution id* which
+consists of the heavier isotopes characterizing the associated isotopologue,
+e.g. `"[13]C4[15]N2"` and determine the frequency of each substitution in HMDB.
+
+```{r, echo = FALSE}
+dr <- paste0("data/RData/")
+dir.create(dr, showWarnings = FALSE, recursive = TRUE)
+```
+
+```{r}
+data(isotopes)
+# isos <- c("13C", "2H", "15N", "17O", "18O", "33S", "34S", "35S", "36S",
+#           "36Cl", "37Cl")
+isos <- isotopes$isotope[-match(unique(isotopes$element), isotopes$element)]
+```
+
+```{r, eval = !file.exists(paste0(dr, "subst_frequencies_negative.RData"))}
+## Ensure that element order is correct
+chemforms <- sapply(adducts_frmls, standardizeFormula)
+threshold <- 0.01 * 10^(-2)
+iso_ps <- isopattern(isotopes, chemforms , threshold = threshold, rel_to = 2) 
+
+## Define the isotopologue name for each substitution - ensuring the order of
+## isotopes to be the same across compounds
+iso_ps <- lapply(iso_ps, function(iso_p) {
+    idx <- match(colnames(iso_p), isos)
+    tmp <- iso_p[, !is.na(idx), drop = FALSE]
+    mono_iso <- rowSums(tmp) == 0
+    tmp <- tmp[!mono_iso, order(idx[!is.na(idx)]), drop = FALSE]
+    cn <- colnames(tmp)
+    elname <- gsub('[0-9]', '', cn)
+    isonumb <- gsub('[^0-9]', '', cn)
+    nms <- rep("", nrow(iso_p))
+    nms[!mono_iso] <- apply(tmp, 1, function(row)
+        paste0("[", isonumb[row > 0],  "]", elname[row > 0], row[row > 0], 
+               collapse = ""))
+    nms[mono_iso] <- "mono"
+    rownames(iso_p) <- nms
+    iso_p
+})
+
+subst_per_cmpd <- lapply(iso_ps, function(z) rownames(z)[rownames(z) != "mono"])
+subst_frequency <- table(unlist(subst_per_cmpd, use.names = FALSE))
+save(subst_frequency, subst_per_cmpd, 
+     iso_ps, chemforms, file = paste0(dr, "subst_frequencies_negative.RData"))
+```
+
+
+```{r, echo = FALSE, eval = file.exists(paste0(dr, "subst_frequencies_negative.RData"))}
+load(paste0(dr, "subst_frequencies_negative.RData"))
+```
+
+We thus defined `r length(subst_frequency)` substitutions that in at least a 
+compound in HMBD would yield a probability higher than 10^(-4).
+
+For each given substitution we compute the mean intensity it has in the
+compounds of HMBD where it was found to result in a peak higher then the set
+threshold.
+
+```{r}
+intens <- unlist(lapply(iso_ps, function(iso_p) {
+    iso_p[rownames(iso_p) != "mono", "abundance"]
+}), use.names = FALSE)
+m_intens_subs <- tapply(intens, unlist(subst_per_cmpd, use.names = FALSE), mean)
+```
+
+and plot it against the frequency of the substitution in HMBD. Most of the 
+substitution present a small mean intensity. Most of the substitution with mean 
+intensity higher than 5 are those related to Cl (these are not very frequent) 
+and C.
+
+```{r, fig.height = 5, fig.width = 9, fig.cap = "Substitutions frequencies and mean intensities."}
+library(ggplot2)
+library(plotly)
+p <- data.frame(subst_name = names(m_intens_subs),
+                subst_frequency = as.numeric(subst_frequency), 
+                mean_intensity = m_intens_subs) %>%
+  ggplot(aes(subst_frequency, mean_intensity, label = subst_name)) + geom_point()
+ggplotly(p + labs(x = "frequency", y = "mean intensity"))
+```
+
+We next identify the *most frequently* observed substitutions in compounds of
+HMDB. A first approach could be simply to select the substitutions found in 50% 
+of compounds to yield an intensity larger than the set threshold. 
+Because of the high frequency of C, H and O elements in compounds of HMDB, this 
+selection is heavily biased by isotopes of these elements.
+
+To correct this bias we divide the counts of the times a substitution is found 
+to be significant in the HMBD compounds for the times that this substitution 
+can be observed across the HMBD compounds. In other words these ratios represent 
+the likelihood to find a substitution significant among the subset of HMBD 
+compounds that have it as possible substitution (this happens when, for each 
+element $X$ in the compound, the number of atoms of $X$ is >= than the sum of 
+the numbers ${n_X}_2$, ..., ${n_X}_q$ of heavier isotopes associated to the 
+substitution).
+
+```{r}
+nvar <- sapply(names(subst_frequency), function(subst) {
+  els <- count_elements(subst)
+  var <- rep(TRUE, nrow(counts_df))
+  for (el in names(els)) 
+    var <- var & (counts_df[, el] >= els[el])
+  sum(var)
+})
+```
+
+```{r, fig.height = 5, fig.width = 17, fig.cap = "Substitutions with corrected proportion > 0.5"}
+subst_proportion_var <- sort(subst_frequency/nvar, decreasing = TRUE)
+par(mar = c(10, 4.1, 4.1, 2.1))
+barplot(subst_proportion_var[subst_proportion_var > 0.5], las = 2)
+```
+
+In the plot above we can see the substitutions that produce a significant 
+peak for at least a half of the compounds in which they are possible. 
+(the height of the bar specifies the exact proportion). In this case we observe 
+also substitutions presenting N, S or Cl atoms. 
+For example, all molecules (the proportion in the above plot is 
+1) of HMBD that have at least 1 atom of C and 1 atom of Cl are found to have 
+significant peaks corresponding to [13]C1[37]Cl1 despite the fact that the 
+number of such compounds in HMBD is very low.
+
+In the following plot we show also the mean intensity of the substitutions. 
+We notice that substitutions of Cl which have high 
+mean intensity are selected (but would be excluded considering a simple 
+proportion).
+
+```{r, fig.height = 5, fig.width = 9, fig.cap = "Corrected proportions and mean intensities for the substitutions. The substitutions on the right of the red line correspond to the columns in the previous barplot"}
+library(ggplot2)
+library(plotly)
+par(mfrow= c(1,2))
+p <- data.frame(subst_name = names(m_intens_subs),
+                proportion_var = as.numeric(subst_frequency/nvar), 
+                mean_intensity = m_intens_subs) %>%
+ggplot(aes(proportion_var, mean_intensity, label = subst_name)) + geom_point()
+ggplotly(p + geom_vline(xintercept = 0.5, color = "red", size= .1) + 
+           labs(x = "proportion (corrected)", y = "mean intensity"))
+```
+
+```{r}
+selected_substs <- names(subst_proportion_var[subst_proportion_var > 0.5])
+```
+
+### Defining mass difference and intensity (probability) ratios
+
+We next compute for all of the isotopologues (associated with the selected 
+substitutions) their mass difference $md$ and subsequently also the observed 
+intensity (probability) ratios between monoisotopic peak and isotopologue peak.
+
+```{r, eval = !file.exists(paste0(dr, "iso_data_sub_negative.RData"))}
+## Calculate mass differences and intensity (probability) ratios for all
+## isotopologues; putting all into a data.frame for easier data processing
+iso_data <- lapply(iso_ps, function(z) {
+    mono <- which(rownames(z) == "mono")
+    if (length(mono) == 1L) {
+        res <- data.frame(isotopologue = rownames(z),
+                          md = z[, "m/z"] - z[mono, "m/z"],
+                          R = z[, "abundance"] / z[mono, "abundance"],
+                          z[, c("m/z", "abundance"), drop = FALSE],
+                          monomass = z[mono, "m/z"],
+                          check.names = FALSE)
+        res[-mono, , drop = FALSE]
+    } else {
+        data.frame(isotopologue = rownames(z),
+                   md = NA_real_,
+                   R = NA_real_,
+                   z[, c("m/z", "abundance"), drop = FALSE],
+                   monomass = NA_real_,
+                   check.names = FALSE)
+    }
+})
+cnts <- vapply(iso_data, nrow, integer(1))
+iso_data <- do.call(rbind, iso_data)
+rownames(iso_data) <- NULL
+iso_data$formula <- rep(adducts_frmls, cnts)
+iso_data$hmdb_id <- rep(rownames(counts_df), cnts)
+
+## subset to selected isotopologues
+iso_data_sub <- iso_data[iso_data$isotopologue %in% selected_substs, ]
+save(iso_data_sub, file = paste0(dr, "iso_data_sub_negative.RData"))
+```
+
+```{r, eval = file.exists(paste0(dr, "iso_data_sub_negative.RData"))}
+load(paste0(dr, "iso_data_sub_negative.RData"))
+```
+
+### Finding bounds for intensity ratios on a subdivision of the x (mass) axis
+
+Given the set of selected substitutions we want to determine, for each of them, 
+mass dependent upper and lower bounds for R (ratio between the probability to 
+observe the substitution in a compound and the probability to observe the 
+monoisotopic substitution). In particular, we construct broken bound lines 
+iteratively using the following strategy based on the available data points 
+(m, R) (each of them being associated to a certain HMDB compound) for a given 
+substitution. To determine an upper [lower] bound line we start from the origin
+of the (mass, R) space and we select among the available points the point P1 
+such that the slope of the line trough the origin and P1 is maximum [minimum]. 
+Then among the points to the right of P1 (if any) we look for P2 such that the 
+slope through P1 and P2 is maximum [minimum]. We proceed analogously until 
+there's no point to the right of PN, i.e. PN is the point with maximum mass 
+value. The broken line obtained by connecting each of the found points with 
+the next one is by construction an upper [lower] bound line.
+The approach seem to work relatively well for the lower bound broken line 
+because the relation R vs mass tends to always be linear or superlinear. 
+However, for the same reason the upper bound broken line is often the line 
+through the origin and one of the rightmost points and therefore doesn't follow 
+the nonlinear trend well enough. To solve the problem associated with the 
+upper bound the idea is to modify the algorithm in such a way that the
+next point is searched among those who have mass lower than a certain mass 
+threshold rather than on all the points to the right of P.
+In particular we define a subdivision `xsubd` of the mass range where points are
+present. We start by searching the point P1 among those with mass s.t. 
+0 < mass < `xsubd[2]`, P2 among those with mass s.t. 
+P1 x value < mass < `xsubd[2]` etc.
+In addition we want negative slope segments to be avoided should the algorithm 
+find any. With the original algorithm negative slopes can only occur for the
+the last segments of the upper bound broken line. That's because for the upper 
+[lower] bound line the slope of each segment is bigger [smaller] by construction 
+than that of the next one and the slope of the first segment is always 
+positive (being one endpoint the origin and the other having positive 
+coordinates). The modification of the original algorithm introduces the 
+possibility that each segment (but the first one) can have negative slope for 
+both the upper bound and lower bound line. We remove points which which cause
+negative slopes segments in such a way that the remaining points still define 
+a bound broken line. In case the last segments have negative slopes we replace 
+the points originating them with a point at the intersection of the line 
+extending the last valid (positive slope) segment and the vertical line through
+the point with maximum x value.
+
+In the following plot are reported the bounds for R vs mass obtained using the 
+modified function for the upper bound. A x axis subdivision with shorter 
+intervals the closer to the minimum of the mass range has been used.
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)),
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    plot(points, main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    xsubd <- seq(0, 1, length.out = 8)^2 * diff(range(points[, 1])) + 
+      min(points[, 1])
+    bpl <- bound_points(points, "lower")
+    points(bpl, type = "l", col = "#377EB880")
+    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
+    bpu <- bound_points2(points, "upper", xsubd = xsubd)
+    points(bpu, type = "l", col = "#4DAF4A80")
+    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
+  }
+})
+```
+
+We repeat the same plots on a portion of the mass range.
+```{r, echo = FALSE, fig.width = 10, fig.height = 8}
+f <- rep(seq(ceiling(length(selected_substs)/9)),
+         each = 9)[seq_along(selected_substs)]
+plts <- split(sort(selected_substs), f)
+
+tmp <- lapply(plts, function(z) {
+  par(mfrow = c(3, 3), mar = c(4.2, 4.2, 2, 0.5))
+  for (iso in z) {
+    idx <- which(iso_data_sub$isotopologue == iso)
+    points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+    #s <- which(points[, 1] <= 800)
+    s <- which(points[, 1] <= min(points[, 1]) + 700)
+    plot(points[s, ], main = iso, xlab = "monoisotopic mass",
+         ylab = "R", pch = 16, col = "#00000040", cex = 0.75)
+    xsubd <- seq(0, 1, length.out = 8)^2 * diff(range(points[, 1])) +
+      min(points[, 1])
+    bpl <- bound_points(points, "lower")
+    points(bpl, type = "l", col = "#377EB880")
+    abline(v = bpl[, 1], col = "grey", lwd = 0.5)
+    bpu <- bound_points2(points, "upper", xsubd = xsubd)
+    points(bpu, type = "l", col = "#4DAF4A80")
+    abline(v = bpu[, 1], col = "grey", lwd = 0.5)
+  }
+})
+```
+
+We construct the substitution definition table.
+```{r}
+hmdb_subst <- lapply(selected_substs, function(sub){
+  idx <- which(iso_data_sub$isotopologue == sub)
+  points <- cbind(iso_data_sub$monomass[idx], iso_data_sub$R[idx])
+  xsubd <- seq(0, 1, length.out = 8)^2 * diff(range(points[, 1])) +
+    min(points[, 1])
+  bpl <- bound_points(points, "lower")
+  bpu <- bound_points2(points, "upper", xsubd = xsubd)
+  res <- get_bounds(bpl, bpu)
+  nr <- nrow(res)
+  data.frame(name = rep(sub, nr),
+             md = rep(iso_data_sub$md[idx][1], nr),
+             minmass = rep(min(points[, 1]), nr),
+             maxmass = rep(max(points[, 1]), nr),
+             res)
+})
+hmdb_subst <- do.call(rbind, hmdb_subst)
+```
+
+```{r}
+dr_txt <- paste0("data/txt/")
+dir.create(dr_txt, showWarnings = FALSE, recursive = TRUE)
+write.table(hmdb_subst, 
+            file = paste0(dr_txt, "hmdb_subst_negative.txt"),
+            sep = "\t", row.names = TRUE)
+```
+
+The following table contains summary information about the substitutions.
+```{r}
+f <- factor(iso_data_sub$isotopologue)
+subst_info <- data.frame(
+  name = levels(f),
+  minmass = vapply(split(iso_data_sub$monomass, f), min, numeric(1)),
+  maxmass = vapply(split(iso_data_sub$monomass, f), max, numeric(1)),
+  md = iso_data_sub$md[match(levels(f), iso_data_sub$isotopologue)],
+  proportion = as.numeric(
+    (subst_frequency / nrow(cmps))[match(levels(f), names(subst_frequency))]),
+  proportion_var = as.numeric(
+    subst_proportion_var[match(levels(f), names(subst_proportion_var))])
+)
+subst_info <- subst_info[order(subst_info$md), ]
+rownames(subst_info) <- NULL
+pandoc.table(subst_info, style = "rmarkdown")
+```
+# Session information
+
+The R version and packages used in this analysis are listed below.
+
+```{r sessioninfo}
+sessionInfo()
+```
