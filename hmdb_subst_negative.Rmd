@@ -400,6 +400,7 @@ hmdb_subst <- lapply(selected_substs, function(sub){
              res)
 })
 hmdb_subst <- do.call(rbind, hmdb_subst)
+hmdb_subst <- hmdb_subst[order(hmdb_subst[, "md"]), ]
 ```
 
 ```{r}
