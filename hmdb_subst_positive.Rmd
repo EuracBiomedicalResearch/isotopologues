@@ -1,5 +1,5 @@
 ---
-title: "Defining parameters to identify isotopologue peaks using [M+H], [M+k], [M+Na] from HMDB"
+title: "Defining parameters to identify isotopologue peaks using most commong positive adducts for compounds in HMDB"
 author: "Andrea Vicini, Vinicius Verri Hernandez, Johannes Rainer"
 output:
   rmarkdown::html_document:
@@ -20,6 +20,17 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 $\require{mhchem}$
 
 # Introduction
+
+In this document we define parameters to identify and group potential
+isotopologue peaks based on the negatively charged ions ([M+H]+, [M+K]+ and
+[M+Na]+) of all compounds defined in the Human Metabolome Database
+[HMDB](https://hmdb.ca).
+
+```{r include_approach, echo = FALSE, results = "asis"}
+cat(readLines("./approach.md"), sep = "\n")
+```
+
+# Parameter estimation
 
 In this document we evaluate the substitutions parameters that can be obtained
 from the the adducts [M+H], [M+k], [M+Na] of the human metabolom database
@@ -414,4 +425,10 @@ The R version and packages used in this analysis are listed below.
 
 ```{r sessioninfo}
 sessionInfo()
+```
+
+Information on the HMDB data used:
+
+```{r}
+metadata(cdb)
 ```
