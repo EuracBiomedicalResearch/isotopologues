@@ -12,12 +12,20 @@ count_elements <- function(subst){
 #' Finding points defining a bound broken line
 #'
 #' @param points matrix with the points for which a bound is sought.
-#' @param option string either equal to "lower" or "upper" depending on 
-#' whether an upper bound or a lower bound is desired.  
+#' @param option string either equal to "lower" or "upper" depending on
+#' whether an upper bound or a lower bound is desired.
 #' @param p0 vector specifying the starting point of the algorithm.
 #'
 #' @return matrix with the points in `points` which define a bound broken line
-bound_points <- function (points, option = "lower", p0 = c(0, 0)){
+#' @description To determine an upper [lower] bound line we start from the point
+#' (0,0) and we select among the available points the point P1 such that the
+#' slope of the line trough the origin and P1 is maximum [minimum].
+#' Then among the points to the right of P1 (if any) we look for P2 such that
+#' the slope through P1 and P2 is maximum [minimum]. We proceed analogously
+#' until there's no point to the right of PN, i.e. PN is the point with maximum
+#' mass value. 
+
+bound_points <- function (points, option = "lower", p0 = c(0, 0)) {
   bound_pts <- p0
   if(option == "lower") {
     FUN <- which.min
@@ -26,7 +34,7 @@ bound_points <- function (points, option = "lower", p0 = c(0, 0)){
   } else {
     stop("error")
   }
-  while(nrow(points)){
+  while(nrow(points)) {
     slopes = (points[, 2] - p0[2])/(points[, 1] - p0[1])
     p1 <- points[FUN(slopes), ]
     bound_pts <- rbind(bound_pts, p1)
@@ -38,17 +46,29 @@ bound_points <- function (points, option = "lower", p0 = c(0, 0)){
 }
 
 #' Finding better points defining bound broken line (especially needed for
-#' the upper bound case) 
+#' the upper bound case)
 #'
 #' @param points matrix with the points for which a bound is sought.
-#' @param option string either equal to "lower" or "upper" depending on 
-#' @param xsubd ordered vector of mass values representing a subdivision of the 
+#' @param option string either equal to "lower" or "upper" depending on
+#' @param xsubd ordered vector of mass values representing a subdivision of the
 #' mass range that x-values of `points` span. The first point is the minimum of
 #' the range, the last one its maximum.
 #' @param p0 vector specifying the starting point of the algorithm.
 #'
 #' @return matrix with the points in `points` which define a bound broken line
-bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
+#' @description this function modifies `bound_points` to deal with situations
+#' where the `points` tend to present a convex trend (and in this case it is
+#' particularly useful for the computation of the upper bound). In particular,
+#' we define a subdivision `xsubd` of the mass range where points are present.
+#' Then the algorithm searches the point P1 among those with mass s.t.
+#' 0 < mass < `xsubd[2]`, P2 among those with mass s.t.
+#' P1 x value < mass < `xsubd[2]` etc. In addition remove negative points,
+#' if any, that would originate negative slope segments in such a way that the
+#' remaining points still define a bound broken line. If the last segments have
+#' negative slopes we replace the points originating them with a point at the
+#' intersection between the line extending the last valid (positive
+#' slope) segment and the vertical line through the point with maximum x value.
+bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)) {
   bound_pts <- p0
   k <- 2
   max_x <- max(points[, 1])
@@ -59,7 +79,7 @@ bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
   } else {
     stop("error")
   }
-  while(nrow(points)){
+  while(nrow(points)) {
     while(!length(idxs <- which(points[, 1] <= xsubd[k])) && k < length(xsubd))
       k <- k + 1
     points_tmp <- as.matrix(points[idxs, , drop = FALSE])
@@ -80,9 +100,9 @@ bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
   else
     seqi <- np:2
   s <- seqi[2] - seqi[1]
-  for (i in seqi){
-    if(keep[i]){
-      keep[which(s * bound_pts[, 1] > s * bound_pts[i, 1] & 
+  for (i in seqi) {
+    if(keep[i]) {
+      keep[which(s * bound_pts[, 1] > s * bound_pts[i, 1] &
                    s * bound_pts[, 2] < s * bound_pts[i, 2])] <- FALSE
     }
   }
@@ -97,13 +117,13 @@ bound_points2 <- function (points, option = "lower", xsubd, p0 = c(0, 0)){
   bound_pts
 }
 
-#' Get slope and intercept of the segments connecting a set of points 
+#' Get slope and intercept of the segments connecting a set of points
 #' (each one of them to the next one).
 #'
-#' @param pts matrix of points 
+#' @param pts matrix of points
 #'
-#' @return matrix. The first column contains the intercepts of the lines, the 
-#' second one contains their slopes. 
+#' @return matrix. The first column contains the intercepts of the lines, the
+#' second one contains their slopes.
 get_lines <- function(pts) {
   slope <- diff(pts[, 2])/diff(pts[, 1])
   intercept <- pts[-1, 2] - slope * pts[-1, 1]
@@ -115,7 +135,7 @@ get_lines <- function(pts) {
 #' @param pts1 points defining lower bound line
 #' @param pts2 points defining upper bound line
 #'
-#' @return matrix. Each row contains two mass values defining an interval, the 
+#' @return matrix. Each row contains two mass values defining an interval, the
 #' slopes and intercepts of the upper and lower bound line on that interval.
 get_bounds <- function(pts1, pts2) {
   n1 <- nrow(pts1)
@@ -138,7 +158,7 @@ get_bounds <- function(pts1, pts2) {
       linesc[i, 3:4] <- lines2[idx, ]  
   }
   res <- cbind(x_lo, x_up, linesc)
-  colnames(res) <- c("leftend", "rightend", "LBint", "LBslope", "UBint", 
+  colnames(res) <- c("leftend", "rightend", "LBint", "LBslope", "UBint",
                      "UBslope")
   res
 }

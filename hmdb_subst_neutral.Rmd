@@ -18,6 +18,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 **Compiled**: `r date()`
 
 $\require{mhchem}$
+
 # Introduction
 
 In this document we evaluate possibilities to estimate m/z and intensities of
@@ -26,93 +27,8 @@ compound. Ultimately, this should allow to identify groups of mass peaks in a
 spectrum that represents isotopologues of the same compound.
 
 
-# Isotope detection or definition approaches
 
-
-## `CAMERA`
-
-[`CAMERA`](https://bioconductor.org/packages/release/bioc/html/CAMERA.html)
-takes a simple approach based on hard coded lower and upper limits for isotope
-peaks. How this limits were defined is unclear. For the m/z differences of the
-peaks simple lower and upper limits are used, not discriminating between
-e.g. C13 and N15 isotopes.
-
-## `envipat`
-
-[`envipat`](https://cran.r-project.org/web/packages/enviPat/) does not seem to
-allow identifying isotopes in MS data but does predict an isotope (intensity)
-distribution from a chemical formula.
-
-
-## Breen et al. 2000. Automatic poisson peak harvesting for high throughput protein identification
-
-The authors consider Poisson modelling of isotopic distributions. Given a 
-molecule with mass m they find a mapping F between m and the mean M of the 
-Poisson distribution model (F: m-> M).
-To compute this mapping they derive from a database a hypothetical average 
-aminoacid. Next they use this to construct a set of the theoretical peptides 
-whose mass span a certain range of interest. They compute the isotopic 
-distribution of those and for each one of them they compute M* as the value of M 
-that makes Poisson(M) more similar to the isotopic distribution. Finally they 
-fit a line for the values of m against the M* and this line represents the 
-mapping F. In the end, they model the isotopic distribution of a compound with 
-mass m as a Poisson(P(M))
-
-## Park et al. 2008. Isotopic peak intensity ratio based algorithm for determination of isotopic clusters and monoisotopic masses of polypeptides from high-resolution mass spectrometric data
-
-The following statements are reported for the isotopic distribution of a compound 
-with elements C, H, N, O, S.
-- the intensity of a peak Ik approximates to a polynomial in m (molecular weight) 
-  with degree k
-- the ratio between consecutive peaks (R) approximates to a linear function in m
-- the ratio product between adjacent peaks (RP) approximates to a constant.
-
-For the last two, the more m is big the better the above approximations get.
-
-To find a relation between R and m they consider a large number of polypeptides 
-in a certain database spanning a certain range (400-5200 Da) and for them 
-they compute R. Then, the interval of interest is divided in two regions 
-(at 1800 Da). For high masses a linear approximation is used and 
-its coefficients are found by fitting a regression line whereas for low masses
-they use a quotient of polynomials (with degree k+1 and k for the k-th R)
-
-The algorithm to cluster isotopic peaks after peak peaking) involves:
-
-- pseudocluster identification. It requires to loop over all the peaks and for
-  each of them find groups of peaks starting with the current peak and separated
-  by +1 (in the single charged case) for each peak. They first enumerate
-  pseudoclusters with two peaks, then pseudoclusters with more peaks and then
-  proceed by considering different charged states.
-- isotopic cluster identification. Among the pseudoclusters, they identify
-  isotopic clusters whose intensity patterns are similar to those of the
-  isotopic distributions in terms of R and RP in the pseudocluster.
-- duplicate cluster removal. In case two clusters overlap they remove the one
-  whose most abundant peak is smaller. If the most abundant peaks are the same,
-  the one with the lowest charge state is removed. If their charge states are
-  also the same, the cluster with the lower "similarity score" is removed.
-
-## Valkenborg et al. 2008. A Model-Based Method for the Prediction of the Isotopic Distribution of Peptides
-
-Also in this article the authors consider the ratios between peak heights.
-They model it as a polynomial model in m (monoisotopic mass) whose order 
-is empirically determined by looking at the improvements obtained by adding 
-higher order terms.
-The parameters of the polynomial model are estimated using the least-squares 
-method on different sets of theoretical peptides (and the model is valid in the 
-corresponding mass range).
-By comparing the ratios between a series of peaks observed in a spectrum with 
-the ratios predicted from the model and selecting a treshold for the allowed 
-"difference" they decide whether the series of peaks is part of an isotopic 
-group or not.
-
-## sgibb
-
-As far as I have understood sgibb uses a mixed approach. He uses the approach of 
-Park et al. 2008 but for checking if a candidate cluster is a isotope cluster, 
-for which he uses the Poisson approach of Breen et al. 2000.
-
-
-# Identification of isotopologue peaks in MS1 data
+# Defining of parameters for isotopologue peak detection
 
 **Given**\
 
@@ -144,8 +60,8 @@ overall mass differences.
 In a compound with $n$ atoms of element $X$ ($n_X$) each of the atoms can be in
 a specific isotope form $\ce{ ^{y}X }$ such as $\ce{^{12}C}$ or $\ce{^{13}C}$
 (with the prevalence of each isotope form for each element being known). Each
-combination of such isotopes $I_X$ (e.g. $\ce{^{16}O3}$ $\ce{^{17}02}$ 
-$\ce{^{18}O4}$) will result in a different shift in mass $md_{I_X}$. 
+combination of such isotopes $I_X$ (e.g. $\ce{^{16}O3}$ $\ce{^{17}02}$
+$\ce{^{18}O4}$) will result in a different shift in mass $md_{I_X}$.
 
 The probability $P(I_X)$ of observing such a combination of isotopes for an
 element $X$ can be computed using the multinomial distribution. The overall mass
@@ -166,9 +82,9 @@ $$P(I) = \prod P(I_{i})$$
 There is a very high number $N_{I_X} = \binom{q + n_X -1}{n_X}$ of possible
 combinations of isotopes $I_X$ for the atoms of $X$, with $q$ being the number
 of different isotopes of element $X$ and a even greater number
-$N_{I_X}* N_{I_Y}...*N_{I_Z}$ of possible isotopologues $I=(I_X, I_Y..., I_Z)$. 
+$N_{I_X}* N_{I_Y}...*N_{I_Z}$ of possible isotopologues $I=(I_X, I_Y..., I_Z)$.
 As a first simplification we keep only isotopologues observed in compounds from
-the Human Metabolome Database HMDB that in addition result in a probability that
+the Human Metabolome Database HMDB that result in a probability that
 is higher than a pre-defined threshold.
 
 Finally, the ratio between the intensities of the monoisotopic peak $x_0$ and a
@@ -187,25 +103,24 @@ elements of a compound would be known, both the intensity $x_{I}$ and the mass
 difference $md$ of each of its isotopologues could be determined.
 
 Without prior knowledge of the measured compounds (and hence chemical formulas)
-or defined isotopologues, we need make some simplifications and approximations
-to allow the identification of isotopologue peaks from m/z and intensity values
-alone. 
+or defined isotopologues, we need to make some simplifications and
+approximations to allow the identification of isotopologue peaks from m/z and
+intensity values alone.
 
 In the present approach we first determine all substitutions that in some of the
-HMDB compounds would result in a peak with absolute probability above a
-certain threshold. We next identify the most frequently observed substitutions
-(across all compounds in HMDB). For each of these isotopologues we then
-determine their mass (i.e the mass difference between a isotopologue with that 
-substitution and the monoisotopic isotopologue) and evaluate the intensity
-(probability) ratios between the monoisotopic peak and the isotopologue peak 
-in all compounds of HMDB (for each of the selected substitutions). While the mass
-difference $md$ of an isotopologue peak depends only on the isotopes of its
-isotopic substitution, its intensity ratio depends also on the total number of
-atoms for the elements of the isotopic substitution that are present in the
-compound. For each substitution we have however the empirically determined 
-<!--- I would remove "empirically" because we computed them theoretically --->
-intensity ratios from the whole set of HMDB compounds which allows us to define
-lower and upper bounds of *expected* (naturally observed) intensity ratios.
+HMDB compounds would result in a peak with absolute probability above a certain
+threshold. We next identify the most frequently observed substitutions (across
+all compounds in HMDB). For each of these isotopologues we then determine their
+mass (i.e the mass difference between a isotopologue with that substitution and
+the monoisotopic isotopologue) and evaluate the intensity (probability) ratios
+between the monoisotopic peak and the isotopologue peak in all compounds of HMDB
+(for each of the selected substitutions). While the mass difference $md$ of an
+isotopologue peak depends only on the isotopes of its isotopic substitution, its
+intensity ratio depends also on the total number of atoms for the elements of
+the isotopic substitution that are present in the compound. For each
+substitution we have however the determined intensity ratios from the whole set
+of HMDB compounds which allows us to define lower and upper bounds of *expected*
+(naturally observed) intensity ratios.
 
 Further, a dependency between the number of (certain) atoms and the m/z (or
 mass) of a compound can be assumed, and this number of atoms has inherently also
@@ -215,7 +130,7 @@ lower bound for $R$ to better model this relationship.
 
 ## Properties
 
-- This approach considers isotopologues resulting in a peak and not single 
+- This approach considers isotopologues resulting in a peak and not single
   isotopes of elements separately.
 - This approach considers both differences in mass as well as ratios between the
   intensities of an candidate isotopologue and monoisotopic peaks for
@@ -257,7 +172,7 @@ cmps <- compounds(cdb, columns = c("compound_id", "name",
 For each compound in the human metabolom database (HMDB) with available mass 
 we compute how many atoms of C, H, N, O, P and S as well as Cl are present in it
 (the latter is important because in human serum samples it is very likely that
-Cl adducts are generated by electro spray ionization). 
+Cl adducts are generated by electro spray ionization).
 We collect the counts in a data frame with a column for each element and a row 
 for each compound in HMDB.
 
@@ -290,14 +205,15 @@ onlyCHNOPSCl <- rowSums(counts_df[, setdiff(elements_names, CHNOPSCl)]) == 0
 # elements different from CHNOPSCl.
 cmps <- cmps[onlyCHNOPSCl, ]
 counts_df <- counts_df[onlyCHNOPSCl, ]
+
 ```
 
-From the `r nrow(counts_df)` compounds in HMDB 
-`r sum(onlyCHNOPSCl != 1)` contain elements other than 
+From the `r nrow(counts_df)` compounds in HMDB
+`r sum(onlyCHNOPSCl != 1)` contain elements other than
 `r paste(CHNOPSCl, collapse = ",")`.
 
 We compute the mean and standard deviation for the number of each element in the
-molecules of HMDB. For each element we also report the percentage of compounds 
+molecules of HMDB. For each element we also report the percentage of compounds
 which have at least one atom of the given element.
 
 ```{r, echo = FALSE, results = "asis"}
@@ -308,7 +224,7 @@ rownames(m_sd) = c("mean", "standard deviation", "% compounds with count > 0")
 pandoc.table(m_sd, style = "rmarkdown")
 ```
 
-We plot, for each of the considered elements, the distribution of the number of 
+We plot, for each of the considered elements, the distribution of the number of
 atoms of the given element in the compounds of HMDB.
 
 ```{r distribution-counts, fig.cap = "Distribution of the number of atoms of CHNOPSCl elements in compounds of HMDB.", fig.width = 7, fig.height = 14, echo = FALSE}
@@ -322,14 +238,14 @@ for (el in CHNOPSCl) {
 The most frequent elements in HMDB compounds are H, C and O, but while the
 number of C and H atoms varies considerably and goes up to over 100, the maximal
 number of O atoms if below 25. Also, the numbers of atoms for all other elements
-is only very low. 
+is only very low.
 
 
 
 ### Identification of the most frequent isotopic substitutions {#isotopologues}
 
-We next aim at identifying, for all compounds present in HMDB, the most 
-frequently observed isotopic substitutions considering all possible 
+We next aim at identifying, for all compounds present in HMDB, the most
+frequently observed isotopic substitutions considering all possible
 isotopologues for each molecule.
 
 To this end we calculate the isotope pattern for each compound in HMDB using
@@ -351,9 +267,9 @@ isos <- isotopes$isotope[-match(unique(isotopes$element), isotopes$element)]
 
 ```{r, eval = !file.exists(paste0(dr, "subst_frequencies_neutral.RData"))}
 ## Ensure that element order is correct
-chemforms <- sapply(cmps$formula, standardizeFormula) # function to find formula from adduct
+chemforms <- sapply(cmps$formula, standardizeFormula)
 threshold <- 0.01 * 10^(-2)
-iso_ps <- isopattern(isotopes, chemforms , threshold = threshold, rel_to = 2) 
+iso_ps <- isopattern(isotopes, chemforms , threshold = threshold, rel_to = 2)
 
 ## Define the isotopologue name for each substitution - ensuring the order of
 ## isotopes to be the same across compounds
@@ -367,7 +283,7 @@ iso_ps <- lapply(iso_ps, function(iso_p) {
     isonumb <- gsub('[^0-9]', '', cn)
     nms <- rep("", nrow(iso_p))
     nms[!mono_iso] <- apply(tmp, 1, function(row)
-        paste0("[", isonumb[row >0],  "]", elname[row > 0], row[row > 0], 
+        paste0("[", isonumb[row >0],  "]", elname[row > 0], row[row > 0],
                collapse = ""))
     nms[mono_iso] <- "mono"
     rownames(iso_p) <- nms
@@ -376,7 +292,7 @@ iso_ps <- lapply(iso_ps, function(iso_p) {
 
 subst_per_cmpd <- lapply(iso_ps, function(z) rownames(z)[rownames(z) != "mono"])
 subst_frequency <- table(unlist(subst_per_cmpd, use.names = FALSE))
-save(subst_frequency, subst_per_cmpd, 
+save(subst_frequency, subst_per_cmpd,
      iso_ps, chemforms, file = paste0(dr, "subst_frequencies_neutral.RData"))
 ```
 
@@ -408,7 +324,7 @@ and C.
 library(ggplot2)
 library(plotly)
 p <- data.frame(subst_name = names(m_intens_subs),
-                subst_frequency = as.numeric(subst_frequency), 
+                subst_frequency = as.numeric(subst_frequency),
                 mean_intensity = m_intens_subs) %>%
   ggplot(aes(subst_frequency, mean_intensity, label = subst_name)) + geom_point()
 ggplotly(p + labs(x = "frequency", y = "mean intensity"))
@@ -420,20 +336,20 @@ of compounds to yield an intensity larger than the set threshold.
 Because of the high frequency of C, H and O elements in compounds of HMDB, this 
 selection is heavily biased by isotopes of these elements.
 
-To correct this bias we divide the counts of the times a substitution is found 
-to be significant in the HMBD compounds for the times that this substitution 
-can be observed across the HMBD compounds. In other words these ratios represent 
-the likelihood to find a substitution significant among the subset of HMBD 
-compounds that have it as possible substitution (this happens when, for each 
-element $X$ in the compound, the number of atoms of $X$ is >= than the sum of 
-the numbers ${n_X}_2$, ..., ${n_X}_q$ of heavier isotopes associated to the 
-substitution).
+To correct this bias we divide the number of times a substitution was found
+*significant* (i.e. with an intensity above the threshold) with the number of
+compounds in the database with a chemical formula that contains at least all
+elements (and their counts) of the isotopic substitution. In other words these
+ratios represent the likelihood to find a substitution significant among the
+subset of HMBD compounds that have it as possible substitution (i.e. for which
+the number of elements from the isotopic substitution is equal or larger then
+the total sum of heavier isotopes for these elements in the substitution).
 
 ```{r}
 nvar <- sapply(names(subst_frequency), function(subst) {
   els <- count_elements(subst)
   var <- rep(TRUE, nrow(counts_df))
-  for (el in names(els)) 
+  for (el in names(els))
     var <- var & (counts_df[, el] >= els[el])
   sum(var)
 })
@@ -454,20 +370,19 @@ For example, all molecules (the proportion in the above plot is
 significant peaks corresponding to [13]C1[37]Cl1 despite the fact that the 
 number of such compounds in HMBD is very low.
 
-In the following plot we show also the mean intensity of the substitutions. 
-We notice that substitutions of Cl which have high 
-mean intensity are selected (but would be excluded considering a simple 
-proportion).
+In the following plot we show also the mean intensity of the substitutions.  We
+notice that substitutions of Cl which have high mean intensity are selected (but
+would be excluded considering a simple proportion).
 
 ```{r, fig.height = 5, fig.width = 9, fig.cap = "Corrected proportions and mean intensities for the substitutions. The substitutions on the right of the red line correspond to the columns in the previous barplot"}
 library(ggplot2)
 library(plotly)
 par(mfrow= c(1,2))
 p <- data.frame(subst_name = names(m_intens_subs),
-                proportion_var = as.numeric(subst_frequency/nvar), 
+                proportion_var = as.numeric(subst_frequency/nvar),
                 mean_intensity = m_intens_subs) %>%
 ggplot(aes(proportion_var, mean_intensity, label = subst_name)) + geom_point()
-ggplotly(p + geom_vline(xintercept = 0.5, color = "red", size= .1) + 
+ggplotly(p + geom_vline(xintercept = 0.5, color = "red", size= .1) +
            labs(x = "proportion (corrected)", y = "mean intensity"))
 ```
 
@@ -518,62 +433,32 @@ save(iso_data_sub, file = paste0(dr, "iso_data_sub_neutral.RData"))
 load(paste0(dr, "iso_data_sub_neutral.RData"))
 ```
 
-### Finding bounds for intensity ratios on a subdivision of the x (mass) axis
 
-Given the set of selected substitutions we want to determine, for each of them, 
-mass dependent upper and lower bounds for R (ratio between the probability to 
-observe the substitution in a compound and the probability to observe the 
-monoisotopic substitution). In particular, we construct broken bound lines 
-iteratively using the following strategy based on the available data points 
-(m, R) (each of them being associated to a certain HMDB compound) for a given 
-substitution. To determine an upper [lower] bound line we start from the origin
-of the (mass, R) space and we select among the available points the point P1 
-such that the slope of the line trough the origin and P1 is maximum [minimum]. 
-Then among the points to the right of P1 (if any) we look for P2 such that the 
-slope through P1 and P2 is maximum [minimum]. We proceed analogously until 
-there's no point to the right of PN, i.e. PN is the point with maximum mass 
-value. The broken line obtained by connecting each of the found points with 
-the next one is by construction an upper [lower] bound line.
-The approach seem to work relatively well for the lower bound broken line 
-because the relation R vs mass tends to always be linear or superlinear. 
-However, for the same reason the upper bound broken line is often the line 
-through the origin and one of the rightmost points and therefore doesn't follow 
-the nonlinear trend well enough. To solve the problem associated with the 
-upper bound the idea is to modify the algorithm in such a way that the
-next point is searched among those who have mass lower than a certain mass 
-threshold rather than on all the points to the right of P.
-In particular we define a subdivision `xsubd` of the mass range where points are
-present. We start by searching the point P1 among those with mass s.t. 
-0 < mass < `xsubd[2]`, P2 among those with mass s.t. 
-P1 x value < mass < `xsubd[2]` etc.
-In addition we want negative slope segments to be avoided should the algorithm 
-find any. With the original algorithm negative slopes can only occur for the
-the last segments of the upper bound broken line. That's because for the upper 
-[lower] bound line the slope of each segment is bigger [smaller] by construction 
-than that of the next one and the slope of the first segment is always 
-positive (being one endpoint the origin and the other having positive 
-coordinates). The modification of the original algorithm introduces the 
-possibility that each segment (but the first one) can have negative slope for 
-both the upper bound and lower bound line. We remove points which which cause
-negative slopes segments in such a way that the remaining points still define 
-a bound broken line. In case the last segments have negative slopes we replace 
-the points originating them with a point at the intersection of the line 
-extending the last valid (positive slope) segment and the vertical line through
-the point with maximum x value.
+### Defining mass-dependend lower and upper bounds for intensity ratios
 
-Using the approach described above we compute upper and lower bound broken lines
+Based on the available intensity ratios calculated on all compounds from HMDB we
+can define upper and lower observed ratios that could be used to determine
+whether the observed intensity ratio of a candidate isotopologue peak would fit
+the expected ratio. Since the intensity ratio $R$ of the isotopic substitutions
+is dependent on the number of elements within the compound and hence also on the
+absolute mass of the compound, we define mass-dependent lower and upper
+intensity ratios.
+We thus construct for each isotopic substitution segmented upper and lower bound
+lines based on the mass-to-$R$ relationships of all HMDB compounds
+for which this substitution was found. To determine the points characterizing
+the segmented upper [lower] bound we use an iterative approach whose fundamental
+idea is to select the next point $P_{i+1}$ as the point that maximizes[minimizes] 
+the slope of the line through the current point $P_{i}$ and $P_{i+1}$ over the
+points with mass in a certain interval having left endpoint equal to the mass of 
+$P_{i}$ (we use the the point (0, 0) as the starting point of the algorithm).
+Using this approach we compute upper and lower bound broken lines
 and we collect slope and intercepts of each segment in a substitution definition
 matrix (along with the mass difference associated to the substitution). For
-the upper bound computation the modified approach has been used with a x axis 
-subdivision presenting shorter intervals the closer to the minimum of the mass 
-range. For each substitution multiple rows are present and each one of them is 
-associated to a different mass interval whose endpoints are the endpoints 
+the upper bound computation the modified approach has been used with a x axis
+subdivision presenting shorter intervals the closer to the minimum of the mass
+range. For each substitution multiple rows are present and each one of them is
+associated to a different mass interval whose endpoints are the endpoints
 x-values of a segment in the broken lines.
-
-<!-- I reorganized the code computing directly the final matrix and plotting 
-the bounds from it in order to have less calls to `bound_points` functions 
-(but they are quite fast so I could also go back to the way it was before -->
-
 
 ```{r}
 hmdb_subst <- lapply(selected_substs, function(sub){
@@ -592,6 +477,7 @@ hmdb_subst <- lapply(selected_substs, function(sub){
              res)
 })
 hmdb_subst <- do.call(rbind, hmdb_subst)
+hmdb_subst <- hmdb_subst[order(hmdb_subst[, "md"]), ]
 ```
 
 In the following plot are reported the obtained bounds for R vs mass.
@@ -620,6 +506,10 @@ tmp <- lapply(plts, function(z) {
   }
 })
 ```
+
+Segmentation along the mass (m/z) axis allows also to describe the upper
+and lower limits for non-linear relationships between intensity ratio $R$ and
+mass.
 
 We repeat the same plots on a portion of the mass range.
 
@@ -653,14 +543,13 @@ tmp <- lapply(plts, function(z) {
 ```{r}
 dr_txt <- paste0("data/txt/")
 dir.create(dr_txt, showWarnings = FALSE, recursive = TRUE)
-write.table(hmdb_subst, 
-            file = paste0(dr_txt, "hmdb_subst_neutral.txt"),
+write.table(hmdb_subst, file = paste0(dr_txt, "hmdb_subst_neutral.txt"),
             sep = "\t", row.names = TRUE)
 ```
 
 The following table contains summary information about the substitutions.
 
-```{r}
+```{r, echo = FALSE, results = "asis"}
 f <- factor(iso_data_sub$isotopologue)
 subst_info <- data.frame(
   name = levels(f),
@@ -674,7 +563,7 @@ subst_info <- data.frame(
 )
 subst_info <- subst_info[order(subst_info$md), ]
 rownames(subst_info) <- NULL
-pandoc.table(subst_info, style = "rmarkdown")
+pandoc.table(subst_info, style = "rmarkdown", split.tables = Inf)
 ```
 
 
@@ -684,4 +573,10 @@ The R version and packages used in this analysis are listed below.
 
 ```{r sessioninfo}
 sessionInfo()
+```
+
+Information on the HMDB data used:
+
+```{r}
+metadata(cdb)
 ```
