@@ -1,5 +1,5 @@
 ---
-title: "Defining parameters to identify isotopologue peaks using [M-H], [M+HCO2], [M+Cl] from HMDB"
+title: "Defining parameters to identify isotopologue peaks using most common negative adducts for compounds in HMDB"
 author: "Andrea Vicini, Vinicius Verri Hernandez, Johannes Rainer"
 output:
   rmarkdown::html_document:
@@ -20,6 +20,17 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 $\require{mhchem}$
 
 # Introduction
+
+In this document we define parameters to identify and group potential
+isotopologue peaks based on the negatively charged ions ([M-H]-, [M+HCO2]- and
+[M+Cl]-) of all compounds defined in the Human Metabolome Database
+[HMDB](https://hmdb.ca).
+
+```{r include_approach, echo = FALSE, results = "asis"}
+cat(readLines("./approach.md"), sep = "\n")
+```
+
+# Parameter estimation
 
 In this document we evaluate the substitutions parameters that can be obtained
 from the the adducts [M-H], [M+HCO2], [M+Cl] of the human metabolom database
@@ -91,7 +102,7 @@ counts_df <- rbind(counts_df_H, counts_df_HCO2, counts_df_Cl)
 adducts_frmls <- apply(counts_df, 1, function(elements) pasteElements(elements))
 ```
 
-### Identification of the most frequent isotopic substitutions {#isotopologues}
+## Identification of the most frequent isotopic substitutions {#isotopologues}
 
 We next aim at identifying, for all compounds present in HMDB, the most
 frequently observed isotopic substitutions considering all possible
@@ -241,7 +252,7 @@ ggplotly(p + geom_vline(xintercept = 0.5, color = "red", size= .1) +
 selected_substs <- names(subst_proportion_var[subst_proportion_var > 0.5])
 ```
 
-### Defining mass difference and intensity (probability) ratios
+## Defining mass difference and intensity (probability) ratios
 
 We next compute for all of the isotopologues (associated with the selected 
 substitutions) their mass difference $md$ and subsequently also the observed 
@@ -284,7 +295,7 @@ save(iso_data_sub, file = paste0(dr, "iso_data_sub_negative.RData"))
 load(paste0(dr, "iso_data_sub_negative.RData"))
 ```
 
-### Finding bounds for intensity ratios on a subdivision of the x (mass) axis
+## Finding bounds for intensity ratios on a subdivision of the x (mass) axis
 
 Based on the available intensity ratios calculated on all compounds from HMDB we
 can define upper and lower observed ratios that could be used to determine
@@ -423,4 +434,10 @@ The R version and packages used in this analysis are listed below.
 
 ```{r sessioninfo}
 sessionInfo()
+```
+
+Information on the HMDB data used:
+
+```{r}
+metadata(cdb)
 ```
