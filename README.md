@@ -1,7 +1,7 @@
 # Define parameters for isotopologue detection
 
 This repository contains analyses performed to define parameters to enable
-grouping of isotope peaks in MS1 data without a priory knowledge of the chemical
+grouping of isotope peaks in MS1 data without a prior knowledge of the chemical
 formula of the candidates.
 
 Based on chemical formulas of compounds from a public resource (in our case the
