@@ -21,133 +21,18 @@ $\require{mhchem}$
 
 # Introduction
 
-In this document we evaluate possibilities to estimate m/z and intensities of
-compounds' isotopologues without knowing the chemical formula of the
-compound. Ultimately, this should allow to identify groups of mass peaks in a
-spectrum that represents isotopologues of the same compound.
+In this document we define parameters to identify and group potential
+isotopologue peaks based on compound definitions from the Human Metabolome
+Database [HMDB](https://hmdb.ca). We use the chemical formulas of the compounds
+as they are provided by HMDB hence estimating all parameters for the *neutral*
+compounds (not specific ions).
+
+```{r include_approach, echo = FALSE, results = "asis"}
+cat(readLines("./approach.md"), sep = "\n")
+```
 
 
-
-# Defining of parameters for isotopologue peak detection
-
-**Given**\
-
-An MS1 spectrum with paired m/z and intensity values.
-
-**Goal**\
-
-Identify all mass peaks (i.e. m/z and intensity pairs) in a spectrum that
-could represent signal from
-[isotopologues](https://goldbook.iupac.org/terms/view/I03351) of the same
-compound.
-
-**Required**\
-
-- Difference in m/z $mzd$ between a monoisotopic peak and the peak of an
-  isotopologue.
-- Expected intensity $x_{I}$ for the isotopologue peak (e.g. relative to the
-  monoisotopic peak intensity $x_{0}$).
-
-## Definitions and approach
-
-The presence of heavier elemental isotopes in a compound will result in a mass
-difference $md$ with respect to the monoisotopic mass of the compound. Although
-for each element, each isotope species is characterized by a difference of one
-or more neutrons, the difference in mass between them isn't exactly integer and
-each elemental isotope will contribute in a different way producing different
-overall mass differences.
-
-In a compound with $n$ atoms of element $X$ ($n_X$) each of the atoms can be in
-a specific isotope form $\ce{ ^{y}X }$ such as $\ce{^{12}C}$ or $\ce{^{13}C}$
-(with the prevalence of each isotope form for each element being known). Each
-combination of such isotopes $I_X$ (e.g. $\ce{^{16}O3}$ $\ce{^{17}02}$
-$\ce{^{18}O4}$) will result in a different shift in mass $md_{I_X}$.
-
-The probability $P(I_X)$ of observing such a combination of isotopes for an
-element $X$ can be computed using the multinomial distribution. The overall mass
-difference $md$ with respect to the monoisotopic mass is determined by the
-combination (number and variant) of isotopes of each element $X, Y,... Z$ in the
-molecule which defines the
-(isotopologue)[https://en.wikipedia.org/wiki/Isotopologue] of the compound $I =
-(I_X, I_Y... I_Z)$ and is given by the sum of the individual mass differences:
-
-$$md = \sum md_{I_{i}}$$ 
-
-Finally the probability of observing the isotopologue $I$ (and the corresponding
-mass difference $md$) is the product of the probabilities of observing each
-combination of isotopes of each element.
-
-$$P(I) = \prod P(I_{i})$$
-
-There is a very high number $N_{I_X} = \binom{q + n_X -1}{n_X}$ of possible
-combinations of isotopes $I_X$ for the atoms of $X$, with $q$ being the number
-of different isotopes of element $X$ and a even greater number
-$N_{I_X}* N_{I_Y}...*N_{I_Z}$ of possible isotopologues $I=(I_X, I_Y..., I_Z)$.
-As a first simplification we keep only isotopologues observed in compounds from
-the Human Metabolome Database HMDB that result in a probability that
-is higher than a pre-defined threshold.
-
-Finally, the ratio between the intensities of the monoisotopic peak $x_0$ and a
-peak of an isotopologue $x_I$ is supposed to approximate the ratio of their
-probabilities
-
-$$R_{I} = \frac{x_{I}}{x_{0}} = \frac{P(I)}{P(0)}$$
-
-This ratio $R_{I}$ depends only on probabilities of the isotopes in which the
-isotopologue differ from the monoisotopic form, i.e. which are part of the
-isotopic substitution (all other probabilities will cancel themselves in the
-ratio above).
-
-Thus, given the chemical formula and hence total numbers of atoms of each
-elements of a compound would be known, both the intensity $x_{I}$ and the mass
-difference $md$ of each of its isotopologues could be determined.
-
-Without prior knowledge of the measured compounds (and hence chemical formulas)
-or defined isotopologues, we need to make some simplifications and
-approximations to allow the identification of isotopologue peaks from m/z and
-intensity values alone.
-
-In the present approach we first determine all substitutions that in some of the
-HMDB compounds would result in a peak with absolute probability above a certain
-threshold. We next identify the most frequently observed substitutions (across
-all compounds in HMDB). For each of these isotopologues we then determine their
-mass (i.e the mass difference between a isotopologue with that substitution and
-the monoisotopic isotopologue) and evaluate the intensity (probability) ratios
-between the monoisotopic peak and the isotopologue peak in all compounds of HMDB
-(for each of the selected substitutions). While the mass difference $md$ of an
-isotopologue peak depends only on the isotopes of its isotopic substitution, its
-intensity ratio depends also on the total number of atoms for the elements of
-the isotopic substitution that are present in the compound. For each
-substitution we have however the determined intensity ratios from the whole set
-of HMDB compounds which allows us to define lower and upper bounds of *expected*
-(naturally observed) intensity ratios.
-
-Further, a dependency between the number of (certain) atoms and the m/z (or
-mass) of a compound can be assumed, and this number of atoms has inherently also
-an influence on the intensity (probability) ratio of an isotopologue. We thus
-determine for each of the selected isotopologues a mass dependent upper and
-lower bound for $R$ to better model this relationship.
-
-## Properties
-
-- This approach considers isotopologues resulting in a peak and not single
-  isotopes of elements separately.
-- This approach considers both differences in mass as well as ratios between the
-  intensities of an candidate isotopologue and monoisotopic peaks for
-  isotopologue peak identification.
-- This approach uses observed intensity (probability) ratios between
-  isotopologue and monoisotopic peaks for all compounds in HMDB to define
-  mass-dependent lower and upper bounds for the expected isotopologue intensity.
-
-## Limitations
-
-- The present definitions base on compounds from HMDB and the presented approach
-  would hence fail to identify isotopes of e.g. anorganic compounds. Parameters
-  would have to be estimated based on corresponding collection of compounds.
-- By using only the most frequent isotopic substitutions we might miss detection
-  of less frequent isotopologues.
-
-## Parameter estimation
+# Parameter estimation
 
 Before proceeding to the actual estimation of the parameters we evaluate element
 counts for all compounds listed in HMDB.
@@ -242,7 +127,7 @@ is only very low.
 
 
 
-### Identification of the most frequent isotopic substitutions {#isotopologues}
+## Identification of the most frequent isotopic substitutions {#isotopologues}
 
 We next aim at identifying, for all compounds present in HMDB, the most
 frequently observed isotopic substitutions considering all possible
@@ -390,7 +275,7 @@ ggplotly(p + geom_vline(xintercept = 0.5, color = "red", size= .1) +
 selected_substs <- names(subst_proportion_var[subst_proportion_var > 0.5])
 ```
 
-### Defining mass difference and intensity (probability) ratios
+## Defining mass difference and intensity (probability) ratios
 
 We next compute for all of the isotopologues (associated with the selected 
 substitutions) their mass difference $md$ and subsequently also the observed 
@@ -434,7 +319,7 @@ load(paste0(dr, "iso_data_sub_neutral.RData"))
 ```
 
 
-### Defining mass-dependend lower and upper bounds for intensity ratios
+## Defining mass-dependend lower and upper bounds for intensity ratios
 
 Based on the available intensity ratios calculated on all compounds from HMDB we
 can define upper and lower observed ratios that could be used to determine
