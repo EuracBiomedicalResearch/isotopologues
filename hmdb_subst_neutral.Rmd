@@ -1,6 +1,7 @@
 ---
 title: "Defining parameters to identify isotopologue peaks using compounds from HMDB"
 author: "Andrea Vicini, Vinicius Verri Hernandez, Johannes Rainer"
+always_allow_html: true
 output:
   rmarkdown::html_document:
     highlight: pygments
